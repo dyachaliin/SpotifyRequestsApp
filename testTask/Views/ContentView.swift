@@ -31,7 +31,7 @@ struct ContentView: View {
                     controller.offset = 0
                     controller.tracks = []
                     
-                    controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).subscribe(onNext: { el in
+                   let firstreq = controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).debug().do(onNext: { el in
                         if var items = el.tracks.items{
                             for index in 0..<items.count {
                                 items[index].thread = 1
@@ -52,7 +52,7 @@ struct ContentView: View {
                                     }}, onError: { _ in
                                         controller.failedDownloading = true
                                     }).subscribe().disposed(by: controller.disposeBag)
-                                
+
                                     } else {
                                         controller.offset += 10
                                         controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
@@ -65,9 +65,9 @@ struct ContentView: View {
                                                 controller.failedDownloading = true
                                             }).subscribe().disposed(by: controller.disposeBag)
                                             }
-                        }).disposed(by: controller.disposeBag)
-                    
-                    controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset + 10).subscribe(onNext: { el in
+                        })
+//
+                   let secreq = controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset + 10).debug().do(onNext: { el in
                         if var items = el.tracks.items{
                             for index in 0..<items.count {
                                 items[index].thread = 2
@@ -88,7 +88,7 @@ struct ContentView: View {
                                     }}, onError: { _ in
                                         controller.failedDownloading = true
                                     }).subscribe().disposed(by: controller.disposeBag)
-                                    
+
                                     } else {
                                         controller.offset += 10
                                         controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
@@ -101,8 +101,11 @@ struct ContentView: View {
                                                 controller.failedDownloading = true
                                             }).subscribe().disposed(by: controller.disposeBag)
                                             }
-                        }).disposed(by: controller.disposeBag)
+                        })
                     
+                    
+                    let finalSequence = Observable.zip(firstreq, secreq)
+                    finalSequence.debug().subscribe().disposed(by: controller.disposeBag)
                     
                 }) {
                     Text("Search")
