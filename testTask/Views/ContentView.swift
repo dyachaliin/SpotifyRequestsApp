@@ -8,13 +8,11 @@
 import SwiftUI
 import RxSwift
 
-
-
 struct ContentView: View {
     
     @EnvironmentObject var controller: ContentViewController
     @State var searchText: String = ""
-
+    
     var body: some View {
         NavigationView {
             VStack {
@@ -28,84 +26,10 @@ struct ContentView: View {
                 
                 Button(action: {
                     controller.appServerClient.name = searchText
-                    controller.offset = 0
+                    controller.offset = 10
                     controller.tracks = []
                     
-                   let firstreq = controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).debug().do(onNext: { el in
-                        if var items = el.tracks.items{
-                            for index in 0..<items.count {
-                                items[index].thread = 1
-                            }
-                            controller.tracks += items
-                        }}, onError: {_ in
-                            controller.failedDownloading = true
-                        }, onCompleted: {
-                            print("req1 has been completed in first stream")
-                            if controller.offset < 20 {
-                                controller.offset += 20
-                                controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
-                                    if var items = el.tracks.items{
-                                        for index in 0..<items.count {
-                                            items[index].thread = 1
-                                        }
-                                        controller.tracks += items
-                                    }}, onError: { _ in
-                                        controller.failedDownloading = true
-                                    }).subscribe().disposed(by: controller.disposeBag)
-
-                                    } else {
-                                        controller.offset += 10
-                                        controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
-                                            if var items = el.tracks.items{
-                                                for index in 0..<items.count {
-                                                    items[index].thread = 1
-                                                }
-                                                controller.tracks += items
-                                            }}, onError: { _ in
-                                                controller.failedDownloading = true
-                                            }).subscribe().disposed(by: controller.disposeBag)
-                                            }
-                        })
-//
-                   let secreq = controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset + 10).debug().do(onNext: { el in
-                        if var items = el.tracks.items{
-                            for index in 0..<items.count {
-                                items[index].thread = 2
-                            }
-                            controller.tracks += items
-                        }}, onError: {_ in
-                            controller.failedDownloading = true
-                        }, onCompleted: {
-                            print("req2 has been completed in second stream")
-                            if controller.offset < 20 {
-                                controller.offset += 20
-                                controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
-                                    if var items = el.tracks.items{
-                                        for index in 0..<items.count {
-                                            items[index].thread = 2
-                                        }
-                                        controller.tracks += items
-                                    }}, onError: { _ in
-                                        controller.failedDownloading = true
-                                    }).subscribe().disposed(by: controller.disposeBag)
-
-                                    } else {
-                                        controller.offset += 10
-                                        controller.appServerClient.makeTracksReq(name: searchText, offset: controller.offset).do(onNext: { el in
-                                            if var items = el.tracks.items{
-                                                for index in 0..<items.count {
-                                                    items[index].thread = 2
-                                                }
-                                                controller.tracks += items
-                                            }}, onError: { _ in
-                                                controller.failedDownloading = true
-                                            }).subscribe().disposed(by: controller.disposeBag)
-                                            }
-                        })
-                    
-                    
-                    let finalSequence = Observable.zip(firstreq, secreq)
-                    finalSequence.debug().subscribe().disposed(by: controller.disposeBag)
+                    getAsyncTracks()
                     
                 }) {
                     Text("Search")
@@ -116,14 +40,13 @@ struct ContentView: View {
                 .overlay(RoundedRectangle(cornerRadius: 5).stroke(lineWidth: 1.0).foregroundColor(.green))
                 .padding(.bottom, 40)
                 .alert(isPresented: $controller.failedDownloading) {
-                    Alert(title: Text("Error"), message: Text("Downloading data is failed. Enter the text correctly."), dismissButton: .default(Text("Ok")))
+                    Alert(title: Text("Error"), message: Text("Downloading data is failed. There are no such tracks."), dismissButton: .default(Text("Ok")))
                 }
                 
-    
+                
                 List(controller.tracks) { track in
                     NavigationLink(destination:
-                                    DetailView(controller: DetailViewController(detailUrl: track.href ?? "") )
-                                   
+                                    DetailView(controller: DetailViewController(detailUrl: track.href ?? ""))
                                    , label: {
                         if track.thread == 1 {
                             Text("\(track.name)")
@@ -132,6 +55,7 @@ struct ContentView: View {
                             Text("\(track.name)")
                                 .background(Color.yellowColor)
                         }
+                        
                     })
                 }
                 
@@ -150,6 +74,35 @@ struct ContentView: View {
     }
     
     
+    func parallelReq(offset: Int, thread: Int) {
+        controller.appServerClient.makeTracksReq(name: searchText, offset: offset) {result in
+            switch result {
+            case .success(var tracks):
+                for index in 0..<tracks.count {
+                    tracks[index].thread = thread
+                }
+                controller.tracks += tracks
+            case .failure(let error):
+                print("Error \(error.localizedDescription)")
+                controller.failedDownloading = true
+            }
+        }
+    }
+    
+    func getAsyncTracks() {
+        DispatchQueue.global().async {
+            parallelReq(offset: 0, thread: 1)
+            controller.offset += 10
+            parallelReq(offset: controller.offset, thread: 1)
+        }
+        
+        DispatchQueue.global().async {
+            parallelReq(offset: 10, thread: 2)
+            controller.offset += 10
+            parallelReq(offset: controller.offset, thread: 2)
+        }
+        
+    }
 }
 
 

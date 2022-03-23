@@ -18,7 +18,7 @@ class ContentViewController: ObservableObject {
     }
     let disposeBag = DisposeBag()
     
-    @Published var offset: Int = 0
+    var offset: Int = 10
     @Published var failedDownloading = false
     
     func saveItems() {
@@ -26,5 +26,5 @@ class ContentViewController: ObservableObject {
             UserDefaults.standard.set(encodedData, forKey: "tracks")
         }
     }
-
+    
 }

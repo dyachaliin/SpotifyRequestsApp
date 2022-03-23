@@ -16,11 +16,36 @@ struct Constants {
     static let clientID = "4ae63ea913b04e3ea21659ae41ca7ea5"
     static let clientSecret = "22c462d8f65041c3ba0845a0a0341c70"
 }
+enum GetTracks {
+    case success(tracks: [Item])
+    case failure(error: Error)
+}
+enum CustomError: Error {
+    case invalidInput
+    case notFound
+}
+
+
+extension CustomError: CustomStringConvertible {
+    public var description: String {
+        switch self {
+        case .invalidInput:
+            return "The provided input is not valid."
+        case .notFound:
+            return "The specified item could not be found."
+            
+        }
+    }
+}
 
 class AFManager {
     
     var tokenResult: String?
     var responseItems: [Item] = []
+    
+    let sessionConfiguration = URLSessionConfiguration.default
+    let session = URLSession.shared
+    let decoder = JSONDecoder()
     
     
     init(){
@@ -57,60 +82,65 @@ class AFManager {
     }
     
     
-    func makeTracksReq(name: String, offset: Int) -> Observable<TracksResp> {
-        return Observable.create { observer -> Disposable in
-            if let token = self.tokenResult {
-                let url = "https://api.spotify.com/v1/search?"
-                let getParams = "q=name:\(name)&type=track&limit=10&offset=\(offset)"
-                let headers: HTTPHeaders = [ "Authorization" : "Bearer \(token)", "Content-Type" : "application/json"]
+    func makeTracksReq(name: String, offset: Int, completion: @escaping (GetTracks) -> Void)  {
+        
+        if let token = self.tokenResult {
+            let getParams = "q=name:\(name)&type=track&limit=10&offset=\(offset)"
+            guard let url = URL(string: "https://api.spotify.com/v1/search?" + getParams) else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            
+            
+            print("Create request with: \(request)")
+            
+            session.dataTask(with: request) { [weak self] (data, response, error) in
+                var result: GetTracks
                 
-                print("Create request with: \(url) \(getParams)")
-                AF.request(url+getParams, method: .get, encoding: JSONEncoding.default, headers: headers).validate().responseDecodable(of: TracksResult.self){ response in
-                    guard let statusCode = response.response?.statusCode, (response.error == nil) else {
-                        let errorTemp = NSError(domain:"Error", code:1, userInfo:nil)
-                        observer.onError(response.error ?? errorTemp)
+                guard let strongSelf = self else {
+                    result = .failure(error: error!)
+                    return
+                    
+                }
+                
+                if error == nil, let parseData = data {
+                    guard let tracks = try? strongSelf.decoder.decode(TracksResult.self, from: parseData) else {
+                        result = .failure(error: CustomError.notFound)
                         return }
-                    if (200..<300).contains(statusCode) {
-                        if let res = response.value{
-                            if res.tracks.total > 0 {
-                                if let items = res.tracks.items {
-                                    self.responseItems = items
-                                }
-                                let next = TracksResp(thread: "\(offset)", offset: offset,tracks: res.tracks)
-                                observer.onNext(next)
-                            } else {
-                                let errorTemp = NSError(domain:"Error", code:1, userInfo:nil)
-                                observer.onError( errorTemp)
-                            }
-                            
-                        }else{
-                            let errorTemp = NSError(domain:"Error", code:1, userInfo:nil)
-                            observer.onError( errorTemp)
+                    if tracks.tracks.total > 0 {
+                        if let items = tracks.tracks.items {
+                            self?.responseItems = items
+                            result = .success(tracks: items)
+                        } else {
+                            result = .failure(error: CustomError.notFound)
                         }
                         
                     } else {
-                        let errorTemp = NSError(domain:"Error", code:1, userInfo:nil)
-                        observer.onError( errorTemp)
+                        result = .failure(error: CustomError.invalidInput )
+                    }} else {
+                        
+                        result = .failure(error: error!)
                     }
-                    
-                    observer.onCompleted()
+                
+                DispatchQueue.main.async {
+                    completion(result)
                 }
-            }else{
-                let errorTemp = NSError(domain:"Error", code:1, userInfo:nil)
-                observer.onError( errorTemp)
-            }
+                
+                
+            }.resume()
             
-            return Disposables.create()
         }
         
     }
     
+    
     func makeHREFReq(href: String, onResult: @escaping (DetailInfo)-> Void, onFailure: @escaping (String)-> Void) {
-        if let token = tokenResult {
-        let url = href
-        let headers: HTTPHeaders = [ "Authorization" : "Bearer \(token)", "Content-Type" : "application/json"]
+        if let token = self.tokenResult {
+            let url = href
+            let headers: HTTPHeaders = [ "Authorization" : "Bearer \(token)", "Content-Type" : "application/json"]
             
-        print("Create request with: \(url) ")
+            print("Create request with: \(url) ")
             AF.request(url, method: .get, encoding: JSONEncoding.default, headers: headers).validate().responseDecodable(of: DetailInfo.self){ response in
                 guard let statusCode = response.response?.statusCode, (response.error == nil) else { onFailure("Error 1")
                     return }
@@ -125,10 +155,10 @@ class AFManager {
                     onFailure("Response code error!")
                 }
             }
-            }else{
-                onFailure("Token is nil! Cannot create a request")
-            }
-
+        }else{
+            onFailure("Token is nil! Cannot create a request")
+        }
+        
     }
 }
 
